@@ -7,6 +7,7 @@ import pyarrow as pa
 
 fake = Faker()
 
+
 def generate_bond_data(num_records):
     data = []
     for _ in range(num_records):
@@ -72,7 +73,6 @@ def generate_bond_data(num_records):
     df = df.with_columns(pl.col("Issuer").cast(pl.Categorical))
     df = df.with_columns(pl.col("Maturity").cast(pl.Date))
     df = df.with_columns(pl.col("Currency").cast(pl.Categorical))
-    
 
     return df
 
@@ -82,7 +82,6 @@ def generate_random_names(num_names):
     for _ in range(num_names):
         names.append(fake.name())
     return names
-
 
 
 def generate_book_structure(num_traders):
@@ -119,7 +118,6 @@ def generate_book_structure(num_traders):
         "book": [fake.bothify(text="GDM#####") for _ in range(num_traders)],
         "business": ["Global Debt Markets" for _ in range(num_traders)],
         "numberOfBooks": [random.randint(3, 10) for _ in range(num_traders)],
-
     }
 
     df = pl.DataFrame(books)
@@ -128,9 +126,23 @@ def generate_book_structure(num_traders):
     for i in desks:
         secondaryTraders[i] = fake.name()
 
-    df = df.with_columns(pl.col("desk").map_elements(lambda x: secondaryTraders[x]).alias("secondaryTrader"))
+    df = df.with_columns(
+        pl.col("desk")
+        .map_elements(lambda x: secondaryTraders[x])
+        .alias("secondaryTrader")
+    )
 
-    df = df.select(pl.exclude("numberOfBooks").repeat_by(pl.col("numberOfBooks")).explode()).with_columns([(pl.col("book").apply(lambda _: fake.bothify(text="GDM#####")).alias("book"))])
+    df = df.select(
+        pl.exclude("numberOfBooks").repeat_by(pl.col("numberOfBooks")).explode()
+    ).with_columns(
+        [
+            (
+                pl.col("book")
+                .map_elements(lambda _: fake.bothify(text="GDM#####"))
+                .alias("book")
+            )
+        ]
+    )
 
     df = df.with_columns(pl.col("business").cast(pl.Categorical))
     df = df.with_columns(pl.col("desk").cast(pl.Categorical))
@@ -141,10 +153,33 @@ def generate_book_structure(num_traders):
     return df
 
 
+def generate_risk_records(n_row):
+    books = generate_book_structure(65)
+    books = books.sample(n_row, shuffle=True, with_replacement=True)
+
+    instruments = generate_bond_data(40000)
+    instruments = instruments.sample(n_row, shuffle=True, with_replacement=True)
+
+    # concat the books and instruments dataframes
+    df = pl.concat([books, instruments], how="horizontal")
+
+    # generate a column name called daysToMatuiry which calculates difference between maturity column and today's date
+    df = df.with_columns(
+        [
+            pl.col("Maturity")
+            .map_elements(lambda x: (x - datetime.today().date()).days)
+            .alias("daysToMaturity")
+        ]
+    )
+
+    df = df.with_columns(
+        [pl.col("daysToMaturity").map_elements(lambda x: x/365).alias("risk")]
+    )
+
+    return df
 
 
 if __name__ == "__main__":
-    books = generate_bond_data(100)
-    df = books.sample(10)
+    df = generate_risk_records(1000)
+
     print(df)
-    
