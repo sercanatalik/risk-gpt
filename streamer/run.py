@@ -1,8 +1,8 @@
 from faker import Faker
 import random
 from datetime import datetime, timedelta
-import faker
 import numpy as np
+import polars as pl
 
 fake = Faker()
 
@@ -73,7 +73,7 @@ def generate_random_names(num_names):
     return names
 
 
-def generate_book(num_books):
+def generate_hms_books(num_books):
     # 'Flow Credit', 'Structured Credit', 'High Yield', 'Investment Grade', 'Emerging Markets'
     books = {
         "balanceSheet": [
@@ -97,7 +97,26 @@ def generate_book(num_books):
         "book": [fake.bothify(text="GDM#####") for _ in range(num_books)],
         "business": ["Global Debt Markets" for _ in range(num_books)],
     }
-    return books
+
+    df = pl.DataFrame(books)
+
+    desks = df.select("desk").unique().to_dict()["desk"]
+    secondayTraders = {}
+    for i in desks:
+        secondayTraders[i] = fake.name()
+
+    df = df.with_columns(
+        [(pl.col("desk").apply(lambda s: secondayTraders[s]).alias("secondaryTrader"))]
+    )
+
+    df = df.with_columns(pl.col("business").cast(pl.Categorical))
+    df = df.with_columns(pl.col("desk").cast(pl.Categorical))
+    df = df.with_columns(pl.col("trader").cast(pl.Categorical))
+    df = df.with_columns(pl.col("book").cast(pl.Categorical))
+    df = df.with_columns(pl.col("balanceSheet").cast(pl.Categorical))
+    df = df.with_columns(pl.col("secondaryTrader").cast(pl.Categorical))
+
+    return df
 
 
 def generate_risk_data(num_records):
@@ -113,4 +132,4 @@ def generate_risk_data(num_records):
         )
 
 
-print(generate_book(10))
+print(generate_hms_books(65))
