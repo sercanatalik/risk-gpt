@@ -3,6 +3,7 @@ import random
 from datetime import datetime, timedelta
 import numpy as np
 import polars as pl
+from yaml import FlowMappingEndToken
 
 fake = Faker()
 
@@ -72,13 +73,27 @@ def generate_random_names(num_names):
         names.append(fake.name())
     return names
 
+import numpy as np
+import pandas as pl
+import random
+from faker import Faker
 
-def generate_hms_books(num_books):
-    # 'Flow Credit', 'Structured Credit', 'High Yield', 'Investment Grade', 'Emerging Markets'
+def generate_hms_books(num_traders):
+    """
+    Generate a DataFrame of HMS books with random data.
+
+    Args:
+        num_traders (int): The number of traders for which to generate books.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the generated HMS books data.
+    """
+    fake = Faker()
+
     books = {
         "balanceSheet": [
             np.random.choice(["HBEU", "HBUS", "HBAP", "HBFR"], p=[0.5, 0.2, 0.2, 0.1])
-            for _ in range(num_books)
+            for _ in range(num_traders)
         ],
         "desk": [
             np.random.choice(
@@ -91,15 +106,15 @@ def generate_hms_books(num_books):
                 ],
                 p=[0.4, 0.1, 0.3, 0.1, 0.1],
             )
-            for _ in range(num_books)
+            for _ in range(num_traders)
         ],
-        "trader": generate_random_names(num_books),
-        "book": [fake.bothify(text="GDM#####") for _ in range(num_books)],
-        "business": ["Global Debt Markets" for _ in range(num_books)],
+        "trader": generate_random_names(num_traders),
+        "book": [fake.bothify(text="GDM#####") for _ in range(num_traders)],
+        "business": ["Global Debt Markets" for _ in range(num_traders)],
+        "numberOfBooks": [random.randint(3, 10) for _ in range(num_traders)],
     }
 
     df = pl.DataFrame(books)
-
     desks = df.select("desk").unique().to_dict()["desk"]
     secondayTraders = {}
     for i in desks:
@@ -109,6 +124,8 @@ def generate_hms_books(num_books):
         [(pl.col("desk").apply(lambda s: secondayTraders[s]).alias("secondaryTrader"))]
     )
 
+    df = df.select(pl.exclude("numberOfBooks").repeat_by(pl.col("numberOfBooks")).explode()).with_columns([(pl.col("book").apply(lambda _: fake.bothify(text="GDM#####")).alias("book"))])
+
     df = df.with_columns(pl.col("business").cast(pl.Categorical))
     df = df.with_columns(pl.col("desk").cast(pl.Categorical))
     df = df.with_columns(pl.col("trader").cast(pl.Categorical))
@@ -117,7 +134,6 @@ def generate_hms_books(num_books):
     df = df.with_columns(pl.col("secondaryTrader").cast(pl.Categorical))
 
     return df
-
 
 def generate_risk_data(num_records):
     data = []
@@ -130,6 +146,5 @@ def generate_risk_data(num_records):
         desk = np.random.choice(
             ["Flow Credit", "HBUS", "HBAP", "HBFR"], p=[0.5, 0.2, 0.2, 0.1]
         )
-
 
 print(generate_hms_books(65))
