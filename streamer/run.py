@@ -1,6 +1,7 @@
 from faker import Faker
 import random
 from datetime import datetime, timedelta
+import faker
 import numpy as np
 import polars as pl
 import pyarrow as pa
@@ -53,6 +54,11 @@ def generate_bond_data(num_records):
         maturity = (
             datetime.now() + timedelta(days=random.randint(365, 365 * 10))
         ).strftime("%Y-%m-%d")
+        midPx = round(random.uniform(80, 120), 3)
+        previosPx = round(midPx + random.normalvariate(0.1, 1.2), 3)
+        zspread = round(random.uniform(70, 500), 3)
+        midYield = 0.05 + zspread / 10000
+
         data.append(
             {
                 "ISIN": isin,
@@ -62,6 +68,10 @@ def generate_bond_data(num_records):
                 "Issuer": issuer,
                 "Maturity": maturity,
                 "Currency": ccy,
+                "MidPx": midPx,
+                "previosPx": previosPx,
+                "zspread": zspread,
+                "midYield": midYield,
             }
         )
 
@@ -173,13 +183,25 @@ def generate_risk_records(n_row):
     )
 
     df = df.with_columns(
-        [pl.col("daysToMaturity").map_elements(lambda x: x/365).alias("risk")]
+        [
+            pl.col("daysToMaturity").map_elements(lambda x: x / 365).alias("duration"),
+            pl.col("daysToMaturity")
+            .map_elements(lambda x: round(random.uniform(-100e3, 150e3) / x) * 1e6)
+            .alias("notional"),
+            pl.col("daysToMaturity").abs().alias("exposure"),
+        ]
     )
+    df = df.with_columns('exposure',df['notional']*df['duration'])
+    
+    
+
+
 
     return df
 
 
 if __name__ == "__main__":
-    df = generate_risk_records(1000)
-
+    pl.Config(set_fmt_float="full")
+    df = generate_risk_records(10)
+    print(df.columns)
     print(df)
