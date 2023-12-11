@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "surface-gpt"
+name = "risk-gpt"
 version = "0.1.0"
 description = ""
 authors = ["Sercan Atalik <sercan@atalik.com>"]
