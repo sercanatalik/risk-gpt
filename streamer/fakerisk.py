@@ -1,10 +1,12 @@
+import string
+import time
+
 from faker import Faker
-import random
 from datetime import datetime, timedelta
-import faker
 import numpy as np
 import polars as pl
-import pyarrow as pa
+import duckdb
+import random
 
 fake = Faker()
 
@@ -12,7 +14,17 @@ fake = Faker()
 def generate_bond_data(num_records):
     data = []
     for _ in range(num_records):
-        isin = fake.isbn10()
+        country_code = ''.join(random.choices(string.ascii_uppercase, k=2))
+
+        # Generate a nine-character alphanumeric code
+        alphanumeric_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=9))
+
+        # For simplicity, use a random digit as the check digit (real ISINs use a complex calculation)
+        check_digit = random.choice(string.digits)
+
+        # Combine to form the ISIN
+        isinId = country_code + alphanumeric_code + check_digit
+
         ccy = np.random.choice(
             ["USD", "EUR", "GBP", "JPY", "AUD", "CAD", "KRW", "TRY"],
             p=[0.5, 0.2, 0.1, 0.05, 0.05, 0.05, 0.025, 0.025],
@@ -51,47 +63,52 @@ def generate_bond_data(num_records):
         )
         country = fake.country()
         issuer = fake.company()
-        maturity = (
-            datetime.now() + timedelta(days=random.randint(365, 365 * 10))
-        ).strftime("%Y-%m-%d")
+        maturityDate = datetime.now() + timedelta(days=random.randint(365, 365 * 10))
+        maturity = maturityDate.strftime("%Y-%m-%d")
         midPx = round(random.uniform(80, 120), 3)
-        previosPx = round(midPx + random.normalvariate(0.1, 1.2), 3)
-        zspread = round(random.uniform(70, 500), 3)
-        midYield = 0.05 + zspread / 10000
-
+        previousPx = round(midPx + random.normalvariate(0.1, 1.2), 3)
+        zSpread = round(random.uniform(70, 500), 3)
+        midYield = round(0.05 + zSpread / 10000, 3)
+        dtm = (maturityDate.date() - datetime.today().date()).days
+        duration = round(dtm / 365, 3)
+        notional = round(random.uniform(-50e6, 100e6), 0)
+        exposure = round(-1 * notional * duration / (1 + midYield) / 1e4)
         data.append(
             {
-                "ISIN": isin,
-                "Rating": rating,
-                "Sector": sector,
-                "Country": country,
-                "Issuer": issuer,
-                "Maturity": maturity,
-                "Currency": ccy,
-                "MidPx": midPx,
-                "previosPx": previosPx,
-                "zspread": zspread,
+                "isinId": isinId,
+                "rating": rating,
+                "sector": sector,
+                "country": country,
+                "issuer": issuer,
+                "maturity": maturity,
+                "currency": ccy,
+                "midPx": midPx,
+                "previousPx": previousPx,
+                "zSpread": zSpread,
                 "midYield": midYield,
+                "dtm": dtm,
+                "duration": duration,
+                "countryCode": country_code,
+                "notional": notional,
+                "exposure": exposure,
             }
         )
 
     df = pl.DataFrame(data)
-    df = df.with_columns(pl.col("ISIN").cast(pl.Categorical))
-    df = df.with_columns(pl.col("Rating").cast(pl.Categorical))
-    df = df.with_columns(pl.col("Sector").cast(pl.Categorical))
-    df = df.with_columns(pl.col("Country").cast(pl.Categorical))
-    df = df.with_columns(pl.col("Issuer").cast(pl.Categorical))
-    df = df.with_columns(pl.col("Maturity").cast(pl.Date))
-    df = df.with_columns(pl.col("Currency").cast(pl.Categorical))
+    df = df.with_columns(pl.col("isinId").cast(pl.Categorical))
+    df = df.with_columns(pl.col("rating").cast(pl.Categorical))
+    df = df.with_columns(pl.col("sector").cast(pl.Categorical))
+    df = df.with_columns(pl.col("country").cast(pl.Categorical))
+    df = df.with_columns(pl.col("issuer").cast(pl.Categorical))
+    df = df.with_columns(pl.col("maturity").cast(pl.Date))
+    df = df.with_columns(pl.col("currency").cast(pl.Categorical))
+    df = df.with_columns(pl.col("countryCode").cast(pl.Categorical))
 
     return df
 
 
 def generate_random_names(num_names):
-    names = []
-    for _ in range(num_names):
-        names.append(fake.name())
-    return names
+    return [fake.name() for _ in range(num_names)]
 
 
 def generate_book_structure(num_traders):
@@ -105,7 +122,6 @@ def generate_book_structure(num_traders):
         pandas.DataFrame: A DataFrame containing the generated HMS books data.
     """
     fake = Faker()
-
     books = {
         "balanceSheet": [
             np.random.choice(["HBEU", "HBUS", "HBAP", "HBFR"], p=[0.5, 0.2, 0.2, 0.1])
@@ -129,13 +145,8 @@ def generate_book_structure(num_traders):
         "business": ["Global Debt Markets" for _ in range(num_traders)],
         "numberOfBooks": [random.randint(3, 10) for _ in range(num_traders)],
     }
-
     df = pl.DataFrame(books)
-    desks = df.select("desk").unique().to_dict()["desk"]
-    secondaryTraders = {}
-    for i in desks:
-        secondaryTraders[i] = fake.name()
-
+    secondaryTraders = {desk: fake.name() for desk in df.select("desk").unique()["desk"]}
     df = df.with_columns(
         pl.col("desk")
         .map_elements(lambda x: secondaryTraders[x])
@@ -163,45 +174,38 @@ def generate_book_structure(num_traders):
     return df
 
 
-def generate_risk_records(n_row):
-    books = generate_book_structure(65)
-    books = books.sample(n_row, shuffle=True, with_replacement=True)
-
-    instruments = generate_bond_data(40000)
-    instruments = instruments.sample(n_row, shuffle=True, with_replacement=True)
-
-    # concat the books and instruments dataframes
+def update_risk_records(books, instruments, n_records, snapId='LIVE' + datetime.today().strftime('%Y%m%d')):
+    books = books.sample(n_records, shuffle=True, with_replacement=True)
+    instruments = instruments.sample(n_records, shuffle=True, with_replacement=True)
     df = pl.concat([books, instruments], how="horizontal")
+    df = df.with_columns(pl.concat_str(df['book'], df['isinId']).alias('positionId'))
+    df = df.with_columns(snapId + ':' + pl.col('positionId')).rename({'literal': 'id'})
+    df = df.with_columns(lastUpdatedAt = datetime.now())
 
-    # generate a column name called daysToMatuiry which calculates difference between maturity column and today's date
-    df = df.with_columns(
-        [
-            pl.col("Maturity")
-            .map_elements(lambda x: (x - datetime.today().date()).days)
-            .alias("daysToMaturity")
-        ]
-    )
-
-    df = df.with_columns(
-        [
-            pl.col("daysToMaturity").map_elements(lambda x: x / 365).alias("duration"),
-            pl.col("daysToMaturity")
-            .map_elements(lambda x: round(random.uniform(-100e3, 150e3) / x) * 1e6)
-            .alias("notional"),
-            pl.col("daysToMaturity").abs().alias("exposure"),
-        ]
-    )
-    df = df.with_columns('exposure',df['notional']*df['duration'])
-    
-    
+    return df,snapId
 
 
+def streamRisk():
+    try:
+        books = pl.read_parquet('../data/books.parquet')
+    except:
+        books = generate_book_structure(65)
+        books.write_parquet('../data/books.parquet')
+    try:
+        instruments = pl.read_parquet('../data/instruments.parquet')
+    except:
+        instruments = generate_bond_data(50000)
+        instruments.write_parquet('../data/instruments.parquet')
 
-    return df
+    riskdf,snapId = update_risk_records(books, instruments, random.uniform(5,150))
 
+    filePath = '..//data//risk//'+snapId + datetime.now().strftime('%H%M%S')+'.parquet'
+    riskdf.write_parquet(filePath)
 
 if __name__ == "__main__":
     pl.Config(set_fmt_float="full")
-    df = generate_risk_records(10)
-    print(df.columns)
-    print(df)
+    pl.Config.set_tbl_cols(14)
+    while True:
+        streamRisk()
+        time.sleep(5)
+        print('running')
