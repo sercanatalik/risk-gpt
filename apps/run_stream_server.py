@@ -67,7 +67,10 @@ def make_app():
 
     async def websocket_handler(websocket: WebSocket):
         handler = PerspectiveStarletteHandler(manager=manager, websocket=websocket)
-        await handler.run()
+        try:
+            await handler.run()
+        except:
+            pass
 
     app = FastAPI()
     app.add_api_websocket_route("/ws", websocket_handler)

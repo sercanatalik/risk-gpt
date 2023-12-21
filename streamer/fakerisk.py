@@ -7,6 +7,7 @@ import numpy as np
 import polars as pl
 import duckdb
 import random
+from bson import ObjectId
 
 fake = Faker()
 
@@ -73,6 +74,8 @@ def generate_bond_data(num_records):
         duration = round(dtm / 365, 3)
         notional = round(random.uniform(-50e6, 100e6), 0)
         exposure = round(-1 * notional * duration / (1 + midYield) / 1e4)
+        coupon = round(random.uniform(0.8, 1.5)*midYield, 2)
+        securityName = issuer.split('-')[0].split(',')[0].split(' ')[0] + ' ' + str(coupon) + ' ' + str(maturityDate.year)
         data.append(
             {
                 "isinId": isinId,
@@ -91,6 +94,8 @@ def generate_bond_data(num_records):
                 "countryCode": country_code,
                 "notional": notional,
                 "exposure": exposure,
+                "coupon": coupon,
+                "securityName": securityName,
             }
         )
 
@@ -173,17 +178,17 @@ def generate_book_structure(num_traders):
     df = df.with_columns(pl.col("secondaryTrader").cast(pl.Categorical))
     return df
 
-
 def update_risk_records(books, instruments, n_records, snapId='LIVE' + datetime.today().strftime('%Y%m%d')):
     books = books.sample(n_records, shuffle=True, with_replacement=True)
     instruments = instruments.sample(n_records, shuffle=True, with_replacement=True)
     df = pl.concat([books, instruments], how="horizontal")
     df = df.with_columns(pl.concat_str(df['book'], df['isinId']).alias('positionId'))
     df = df.with_columns(snapId + ':' + pl.col('positionId')).rename({'literal': 'id'})
-    df = df.with_columns(lastUpdatedAt = datetime.now())
-
+    _now =datetime.now()
+    df = df.with_columns(lastUpdatedAt = _now)
+    df = df.with_columns(pl.Series("snapId",[snapId for _ in df.iter_rows()]))
+    df = df.with_columns(pl.Series("objectId", [str(ObjectId.from_datetime(_now)) for _ in df.iter_rows()]))
     return df,snapId
-
 
 def streamRisk():
     try:
@@ -198,9 +203,9 @@ def streamRisk():
         instruments.write_parquet('../data/instruments.parquet')
 
     riskdf,snapId = update_risk_records(books, instruments, random.uniform(5,150))
-
     filePath = '..//data//risk//'+snapId + datetime.now().strftime('%H%M%S')+'.parquet'
     riskdf.write_parquet(filePath)
+
 
 if __name__ == "__main__":
     pl.Config(set_fmt_float="full")

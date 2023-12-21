@@ -16,6 +16,12 @@ fastapi = "^0.105.0"
 perspective-python = "^2.7.1"
 uvicorn = "^0.24.0.post1"
 websockets = "^12.0"
+orjson = "^3.9.10"
+pymongo = "^4.6.1"
+langserve = "^0.0.36"
+openai = "^1.6.0"
+sse-starlette = "^1.8.2"
+python-multipart = "^0.0.6"
 
 
 [build-system]
