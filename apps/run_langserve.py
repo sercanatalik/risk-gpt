@@ -22,7 +22,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-w
 class Message(BaseModel):
     content: str
     role: str
