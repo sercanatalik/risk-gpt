@@ -54,7 +54,7 @@ async def send_message(messages= list[Message]) -> AsyncIterable[str]:
     finally:
         callback.done.set()
     await task
-@app.post("/chat")
+@app.post("/sqlchat")
 async def stream_chat(request:Request):
     msgs = await request.json()
     msgs = msgs["messages"]

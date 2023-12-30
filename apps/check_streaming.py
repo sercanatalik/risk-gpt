@@ -28,6 +28,4 @@ def get_stream(query: str):
 
 
 if __name__ == '__main__':
-
-    get_stream("hi there! who is ataturk")
-    get_stream("who is his son?")
+    get_stream("'It's 2030 now. How many years ago did Ataturk become president.")
